@@ -171,30 +171,11 @@ def validate_classes():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/export-plantuml', methods=['POST'])
-def export_plantuml():
-    """Export diagram as PlantUML code"""
-    try:
-        data = request.get_json()
-        classes_data = data.get('classes', [])
-        
-        if not classes_data:
-            return jsonify({'success': False, 'error': 'No classes provided'}), 400
-        
-        # Generate PlantUML code
-        plantuml_code = generate_plantuml_code(classes_data)
-        
-        return jsonify({
-            'success': True,
-            'plantuml_code': plantuml_code
-        })
-        
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/api/generate-diagram', methods=['POST'])
 def generate_diagram():
-    """Generate UML diagram - simplified for Vercel"""
+    """Generate UML diagram as PNG"""
     try:
         data = request.get_json()
         classes_data = data.get('classes', [])
@@ -203,15 +184,27 @@ def generate_diagram():
         if not classes_data:
             return jsonify({'success': False, 'error': 'No classes provided'}), 400
         
-        # For Vercel deployment, return a success message with PlantUML code instead
-        plantuml_code = generate_plantuml_code(classes_data)
+        # Generate a simple diagram image
+        diagram = uml_service.generate_simple_diagram(classes_data, styling_options)
         
-        return jsonify({
-            'success': True,
-            'message': 'Diagram generated successfully! PlantUML code provided.',
-            'plantuml_code': plantuml_code,
-            'classes_count': len(classes_data)
-        })
+        if diagram:
+            # Convert PIL image to base64 for JSON response
+            buffer = io.BytesIO()
+            diagram.save(buffer, format='PNG')
+            img_str = base64.b64encode(buffer.getvalue()).decode()
+            
+            return jsonify({
+                'success': True,
+                'message': 'PNG diagram generated successfully!',
+                'image_data': f'data:image/png;base64,{img_str}',
+                'classes_count': len(classes_data)
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'message': 'Diagram processed successfully!',
+                'classes_count': len(classes_data)
+            })
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -235,56 +228,7 @@ def preview_class():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-def generate_plantuml_code(classes_data):
-    """Generate PlantUML code from classes data"""
-    uml_text = "@startuml\n\n"
-    
-    # Add classes
-    for cls in classes_data:
-        class_name = cls.get('name', 'UnnamedClass')
-        uml_text += f"class {class_name} {{\n"
-        
-        # Add notes
-        for note in cls.get('notes', []):
-            if note.get('text', '').strip():
-                uml_text += f"  note [{note.get('type', 'Standard')}]: {note['text']}\n"
-        
-        # Add separator if notes exist and other elements exist
-        if cls.get('notes') and (cls.get('attributes') or cls.get('operations')):
-            uml_text += "  --\n"
-        
-        # Add attributes
-        for attr in cls.get('attributes', []):
-            visibility = uml_service.get_visibility_symbol(attr.get('visibility', 'private'))
-            uml_text += f"  {visibility}{attr.get('name', '')}: {attr.get('type', '')}\n"
-        
-        # Add separator between attributes and operations
-        if cls.get('attributes') and cls.get('operations'):
-            uml_text += "  --\n"
-        
-        # Add operations
-        for op in cls.get('operations', []):
-            visibility = uml_service.get_visibility_symbol(op.get('visibility', 'public'))
-            uml_text += f"  {visibility}{op.get('name', '')}\n"
-        
-        uml_text += "}\n\n"
-    
-    # Add connections
-    for cls in classes_data:
-        for connection in cls.get('connections', []):
-            if connection.get('targetClass'):
-                relationship_symbol = {
-                    'inheritance': '<|--',
-                    'association': '--',
-                    'aggregation': 'o--',
-                    'composition': '*--',
-                    'dependency': '..>'
-                }.get(connection.get('relationship', 'association'), '--')
-                
-                uml_text += f"{cls['name']} {relationship_symbol} {connection['targetClass']}\n"
-    
-    uml_text += "\n@enduml"
-    return uml_text
+
 
 @app.errorhandler(404)
 def not_found(error):

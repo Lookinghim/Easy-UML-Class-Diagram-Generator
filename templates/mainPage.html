@@ -79,12 +79,8 @@
                                 Add Class
                             </button>
                             <button onclick="generateDiagram()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2">
-                                <i class="fas fa-image"></i>
-                                Generate Diagram
-                            </button>
-                            <button onclick="exportPlantUML()" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2">
                                 <i class="fas fa-download"></i>
-                                Export PlantUML
+                                Generate & Download PNG
                             </button>
                         </div>
                     </div>
@@ -610,16 +606,25 @@
                 });
 
                 if (result.download_url) {
+                    // Local development with full image generation
                     showMessage('Diagram generated successfully!', 'success');
                     window.open(result.download_url, '_blank');
-                } else if (result.plantuml_code) {
-                    showMessage('PlantUML code generated! (Vercel deployment)', 'success');
-                    // Create and download PlantUML file
-                    const blob = new Blob([result.plantuml_code], { type: 'text/plain' });
+                } else if (result.image_data) {
+                    // Vercel deployment with base64 PNG data
+                    showMessage('Diagram generated successfully!', 'success');
+                    // Convert base64 to blob and download
+                    const byteCharacters = atob(result.image_data);
+                    const byteNumbers = new Array(byteCharacters.length);
+                    for (let i = 0; i < byteCharacters.length; i++) {
+                        byteNumbers[i] = byteCharacters.charCodeAt(i);
+                    }
+                    const byteArray = new Uint8Array(byteNumbers);
+                    const blob = new Blob([byteArray], { type: 'image/png' });
+                    
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = 'generated-uml-diagram.puml';
+                    a.download = 'uml-diagram.png';
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
@@ -635,38 +640,7 @@
             showLoading(false);
         }
 
-        async function exportPlantUML() {
-            if (classes.length === 0) {
-                showMessage('Please add at least one class before exporting.', 'error');
-                return;
-            }
 
-            showLoading(true);
-            
-            try {
-                const result = await makeApiCall('/api/export-plantuml', {
-                    classes: classes
-                });
-
-                // Create and download file
-                const blob = new Blob([result.plantuml_code], { type: 'text/plain' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'uml-diagram.puml';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                
-                showMessage('PlantUML file exported successfully!', 'success');
-                
-            } catch (error) {
-                showMessage('Error exporting PlantUML: ' + error.message, 'error');
-            }
-            
-            showLoading(false);
-        }
 
         async function validateClasses() {
             if (classes.length === 0) {
