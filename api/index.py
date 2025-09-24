@@ -99,17 +99,47 @@ class UMLDiagramService:
         
         # Create a simple image with PIL
         try:
+            from PIL import ImageDraw, ImageFont
+            
             img_width = styling_options.get('image_width', 800) if styling_options else 800
             img_height = styling_options.get('image_height', 600) if styling_options else 600
             
             # Create basic image
             diagram_image = Image.new('RGB', (img_width, img_height), 'white')
+            draw = ImageDraw.Draw(diagram_image)
             
-            # For Vercel deployment, return a simple placeholder
+            # Draw a simple representation
+            y_offset = 50
+            for i, class_data in enumerate(classes_data):
+                class_name = class_data.get('name', f'Class{i+1}')
+                
+                # Draw class box
+                box_x = 50 + (i * 200)
+                box_y = y_offset
+                box_width = 150
+                box_height = 100
+                
+                # Draw rectangle
+                draw.rectangle([box_x, box_y, box_x + box_width, box_y + box_height], 
+                             outline='black', width=2)
+                
+                # Draw class name
+                try:
+                    draw.text((box_x + 10, box_y + 10), class_name, fill='black')
+                except:
+                    pass  # Font might not be available
+            
             return diagram_image
         except Exception as e:
             print(f"Error generating diagram: {e}")
-            return None
+            # Return a minimal valid image
+            try:
+                minimal_image = Image.new('RGB', (400, 300), 'white')
+                draw = ImageDraw.Draw(minimal_image)
+                draw.text((10, 10), "UML Diagram", fill='black')
+                return minimal_image
+            except:
+                return None
 
 # Initialize the UML service
 uml_service = UMLDiagramService()
@@ -189,16 +219,33 @@ def generate_diagram():
         
         if diagram:
             # Convert PIL image to base64 for JSON response
-            buffer = io.BytesIO()
-            diagram.save(buffer, format='PNG')
-            img_str = base64.b64encode(buffer.getvalue()).decode()
-            
-            return jsonify({
-                'success': True,
-                'message': 'PNG diagram generated successfully!',
-                'image_data': f'data:image/png;base64,{img_str}',
-                'classes_count': len(classes_data)
-            })
+            try:
+                buffer = io.BytesIO()
+                diagram.save(buffer, format='PNG')
+                buffer.seek(0)  # Reset buffer position
+                img_bytes = buffer.getvalue()
+                
+                if len(img_bytes) == 0:
+                    raise ValueError("Generated image is empty")
+                
+                img_str = base64.b64encode(img_bytes).decode('utf-8')
+                
+                # Validate base64 string
+                if not img_str or len(img_str) < 10:
+                    raise ValueError("Generated base64 string is invalid")
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'PNG diagram generated successfully!',
+                    'image_data': f'data:image/png;base64,{img_str}',
+                    'classes_count': len(classes_data)
+                })
+            except Exception as base64_error:
+                print(f"Base64 conversion error: {base64_error}")
+                return jsonify({
+                    'success': False,
+                    'error': f'Failed to convert image to base64: {str(base64_error)}'
+                }), 500
         else:
             return jsonify({
                 'success': True,

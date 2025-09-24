@@ -631,29 +631,45 @@
                     // Vercel deployment with base64 PNG data
                     showMessage('Diagram generated successfully!', 'success');
                     
+                    // Debug: Log the received data
+                    console.log('Received image_data:', result.image_data.substring(0, 100) + '...');
+                    console.log('Image data length:', result.image_data.length);
+                    
                     // Handle both data URL format and plain base64
                     let base64Data = result.image_data;
                     if (base64Data.startsWith('data:image/png;base64,')) {
+                        console.log('Data URL format detected, extracting base64 part');
                         base64Data = base64Data.split(',')[1];
+                    } else {
+                        console.log('Plain base64 format detected');
                     }
+                    
+                    console.log('Final base64 data length:', base64Data.length);
                     
                     // Convert base64 to blob and download
-                    const byteCharacters = atob(base64Data);
-                    const byteNumbers = new Array(byteCharacters.length);
-                    for (let i = 0; i < byteCharacters.length; i++) {
-                        byteNumbers[i] = byteCharacters.charCodeAt(i);
+                    try {
+                        const byteCharacters = atob(base64Data);
+                        const byteNumbers = new Array(byteCharacters.length);
+                        for (let i = 0; i < byteCharacters.length; i++) {
+                            byteNumbers[i] = byteCharacters.charCodeAt(i);
+                        }
+                        const byteArray = new Uint8Array(byteNumbers);
+                        const blob = new Blob([byteArray], { type: 'image/png' });
+                        
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'uml-diagram.png';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    } catch (decodeError) {
+                        console.error('Base64 decode error:', decodeError);
+                        console.error('Problematic base64 data:', base64Data.substring(0, 200));
+                        showMessage('Error decoding image data: ' + decodeError.message, 'error');
+                        return;
                     }
-                    const byteArray = new Uint8Array(byteNumbers);
-                    const blob = new Blob([byteArray], { type: 'image/png' });
-                    
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'uml-diagram.png';
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
                 } else {
                     showMessage('Diagram generated successfully!', 'success');
                 }
