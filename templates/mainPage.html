@@ -72,8 +72,14 @@
                 <div class="bg-white rounded-lg shadow-sm border border-gray-200">
                     <!-- Header with Controls -->
                     <div class="flex flex-row items-center justify-between p-6 border-b border-gray-200">
-                        <h2 class="text-xl font-semibold text-gray-900">Class Definitions</h2>
-                        <div class="flex gap-2">
+                        <div class="flex items-center gap-3">
+                            <h2 class="text-xl font-semibold text-gray-900">Class Definitions</h2>
+                            <div id="saveStatus" class="text-sm text-gray-500 flex items-center gap-1">
+                                <i class="fas fa-circle text-green-500" id="saveStatusIcon"></i>
+                                <span id="saveStatusText">Auto-save enabled</span>
+                            </div>
+                        </div>
+                        <div class="flex gap-2 flex-wrap">
                             <button onclick="addClass()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2">
                                 <i class="fas fa-plus"></i>
                                 Add Class
@@ -82,6 +88,23 @@
                                 <i class="fas fa-download"></i>
                                 Generate & Download PNG
                             </button>
+                            
+                            <!-- Save/Load Controls -->
+                            <div class="flex gap-2 border-l border-gray-300 pl-2 ml-2">
+                                <button onclick="exportToFile()" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2">
+                                    <i class="fas fa-save"></i>
+                                    Export TXT
+                                </button>
+                                <label for="importFile" class="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 cursor-pointer">
+                                    <i class="fas fa-upload"></i>
+                                    Import TXT
+                                </label>
+                                <input type="file" id="importFile" accept=".txt,.json" onchange="importFromFile(event)" class="hidden">
+                                <button onclick="clearAllData()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2">
+                                    <i class="fas fa-trash"></i>
+                                    Clear All
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -618,6 +641,10 @@
             showLoading(true);
             
             try {
+                // Debug: Log what we're sending
+                console.log('Sending classes data:', JSON.stringify(classes, null, 2));
+                console.log('Sending styling options:', JSON.stringify(stylingOptions, null, 2));
+                
                 const result = await makeApiCall('/api/generate-diagram', {
                     classes: classes,
                     styling: stylingOptions
@@ -823,6 +850,235 @@
             originalRemoveClass(classId);
             updateLivePreview();
         };
+
+        // Save/Load functionality
+        const SAVE_KEY = 'uml_generator_save_data';
+        
+        // Cookie management functions
+        function setCookie(name, value, days = 30) {
+            const expires = new Date();
+            expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+            document.cookie = `${name}=${encodeURIComponent(JSON.stringify(value))};expires=${expires.toUTCString()};path=/`;
+        }
+        
+        function getCookie(name) {
+            const nameEQ = name + "=";
+            const ca = document.cookie.split(';');
+            for(let i = 0; i < ca.length; i++) {
+                let c = ca[i];
+                while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+                if (c.indexOf(nameEQ) === 0) {
+                    try {
+                        return JSON.parse(decodeURIComponent(c.substring(nameEQ.length, c.length)));
+                    } catch (e) {
+                        return null;
+                    }
+                }
+            }
+            return null;
+        }
+        
+        function deleteCookie(name) {
+            document.cookie = name + '=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+        }
+        
+        // Auto-save to cookies
+        function autoSaveToCookies() {
+            const saveData = {
+                classes: classes,
+                styling: stylingOptions,
+                timestamp: new Date().toISOString()
+            };
+            
+            setCookie(SAVE_KEY, saveData);
+            console.log('Auto-saved to cookies at:', saveData.timestamp);
+            
+            // Update save status
+            updateSaveStatus('Saved at ' + new Date().toLocaleTimeString(), 'success');
+        }
+        
+        // Update save status indicator
+        function updateSaveStatus(message, type = 'info') {
+            const statusIcon = document.getElementById('saveStatusIcon');
+            const statusText = document.getElementById('saveStatusText');
+            
+            if (statusIcon && statusText) {
+                statusText.textContent = message;
+                
+                // Update icon color based on type
+                statusIcon.className = 'fas fa-circle ' + 
+                    (type === 'success' ? 'text-green-500' : 
+                     type === 'error' ? 'text-red-500' : 
+                     type === 'warning' ? 'text-yellow-500' : 'text-blue-500');
+                
+                // Reset to default after 3 seconds
+                if (type !== 'info') {
+                    setTimeout(() => {
+                        statusIcon.className = 'fas fa-circle text-green-500';
+                        statusText.textContent = 'Auto-save enabled';
+                    }, 3000);
+                }
+            }
+        }
+        
+        // Load from cookies
+        function loadFromCookies() {
+            const savedData = getCookie(SAVE_KEY);
+            if (savedData && savedData.classes) {
+                classes = savedData.classes;
+                if (savedData.styling) {
+                    stylingOptions = { ...stylingOptions, ...savedData.styling };
+                    // Update UI styling controls
+                    updateStylingControls();
+                }
+                renderClasses();
+                updateLivePreview();
+                showMessage(`Restored data from ${new Date(savedData.timestamp).toLocaleString()}`, 'success');
+                return true;
+            }
+            return false;
+        }
+        
+        function updateStylingControls() {
+            if (document.getElementById('boxThickness')) {
+                document.getElementById('boxThickness').value = stylingOptions.outline_width;
+                document.getElementById('thicknessValue').textContent = stylingOptions.outline_width;
+            }
+            if (document.getElementById('boxColor')) {
+                document.getElementById('boxColor').value = stylingOptions.outline_color;
+            }
+            updateStyling(); // Update the preview
+        }
+        
+        // Export to TXT file
+        function exportToFile() {
+            const exportData = {
+                version: "1.0",
+                created: new Date().toISOString(),
+                classes: classes,
+                styling: stylingOptions
+            };
+            
+            const dataStr = JSON.stringify(exportData, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'text/plain' });
+            
+            const url = URL.createObjectURL(dataBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `uml_diagram_${new Date().toISOString().slice(0, 16).replace(/:/g, '-')}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showMessage('Diagram exported to file!', 'success');
+        }
+        
+        // Import from file
+        function importFromFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importData = JSON.parse(e.target.result);
+                    
+                    // Validate import data
+                    if (!importData.classes || !Array.isArray(importData.classes)) {
+                        throw new Error('Invalid file format: missing classes data');
+                    }
+                    
+                    // Load data
+                    classes = importData.classes;
+                    if (importData.styling) {
+                        stylingOptions = { ...stylingOptions, ...importData.styling };
+                        updateStylingControls();
+                    }
+                    
+                    renderClasses();
+                    updateLivePreview();
+                    autoSaveToCookies(); // Auto-save the imported data
+                    
+                    const importDate = importData.created ? 
+                        new Date(importData.created).toLocaleString() : 
+                        'unknown date';
+                    showMessage(`Successfully imported diagram from ${importDate}`, 'success');
+                    
+                } catch (error) {
+                    showMessage(`Import failed: ${error.message}`, 'error');
+                }
+                
+                // Reset file input
+                event.target.value = '';
+            };
+            reader.readAsText(file);
+        }
+        
+        // Clear all data
+        function clearAllData() {
+            if (confirm('Are you sure you want to clear all classes and data? This action cannot be undone.')) {
+                classes = [];
+                renderClasses();
+                updateLivePreview();
+                deleteCookie(SAVE_KEY);
+                showMessage('All data cleared!', 'success');
+            }
+        }
+        
+        // Auto-save trigger - save whenever data changes
+        function triggerAutoSave() {
+            // Show pending save status
+            updateSaveStatus('Saving...', 'warning');
+            
+            // Debounce auto-save to avoid excessive saves
+            if (window.autoSaveTimeout) {
+                clearTimeout(window.autoSaveTimeout);
+            }
+            window.autoSaveTimeout = setTimeout(autoSaveToCookies, 2000); // Save after 2 seconds of inactivity
+        }
+        
+        // Integrate auto-save with existing functions
+        const originalAddClass2 = addClass;
+        addClass = function(initialData = null) {
+            originalAddClass2(initialData);
+            triggerAutoSave();
+        };
+        
+        const originalRemoveClass2 = removeClass;
+        removeClass = function(classId) {
+            originalRemoveClass2(classId);
+            triggerAutoSave();
+        };
+        
+        const originalUpdateClassName2 = updateClassName;
+        updateClassName = function(classId, name) {
+            originalUpdateClassName2(classId, name);
+            triggerAutoSave();
+        };
+        
+        const originalUpdateConnection2 = updateConnection;
+        updateConnection = function(classId, connectionId, field, value) {
+            originalUpdateConnection2(classId, connectionId, field, value);
+            triggerAutoSave();
+        };
+        
+        const originalUpdateStyling = updateStyling;
+        updateStyling = function() {
+            originalUpdateStyling();
+            triggerAutoSave();
+        };
+        
+        // Initialize the app and load saved data on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Try to load saved data from cookies
+            if (!loadFromCookies()) {
+                console.log('No saved data found in cookies, starting fresh');
+            }
+            
+            // Set up periodic auto-save (every 5 minutes as backup)
+            setInterval(autoSaveToCookies, 5 * 60 * 1000);
+        });
     </script>
 </body>
 </html>

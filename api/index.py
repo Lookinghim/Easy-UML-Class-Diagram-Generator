@@ -93,53 +93,175 @@ class UMLDiagramService:
         return text_repr
     
     def generate_simple_diagram(self, classes_data, styling_options=None):
-        """Generate a simple diagram representation for Vercel"""
+        """Generate a complete UML diagram with attributes, operations, and connections"""
         if not classes_data:
             return None
         
-        # Create a simple image with PIL
         try:
             from PIL import ImageDraw, ImageFont
             
-            img_width = styling_options.get('image_width', 800) if styling_options else 800
-            img_height = styling_options.get('image_height', 600) if styling_options else 600
+            img_width = styling_options.get('image_width', 1200) if styling_options else 1200
+            img_height = styling_options.get('image_height', 800) if styling_options else 800
             
             # Create basic image
             diagram_image = Image.new('RGB', (img_width, img_height), 'white')
             draw = ImageDraw.Draw(diagram_image)
             
-            # Draw a simple representation
-            y_offset = 50
+            # Try to get a font
+            try:
+                font = ImageFont.truetype("arial.ttf", 12)
+                small_font = ImageFont.truetype("arial.ttf", 10)
+            except:
+                font = ImageFont.load_default()
+                small_font = ImageFont.load_default()
+            
+            class_boxes = {}  # Store box positions for connection drawing
+            
+            # Calculate layout - arrange classes in a grid
+            classes_per_row = min(3, len(classes_data))
+            row_height = 250
+            col_width = img_width // classes_per_row
+            
+            # Draw classes
             for i, class_data in enumerate(classes_data):
+                row = i // classes_per_row
+                col = i % classes_per_row
+                
+                box_x = col * col_width + 50
+                box_y = row * row_height + 50
+                box_width = col_width - 100
+                
+                # Calculate box height based on content
                 class_name = class_data.get('name', f'Class{i+1}')
+                attributes = class_data.get('attributes', [])
+                operations = class_data.get('operations', [])
                 
-                # Draw class box
-                box_x = 50 + (i * 200)
-                box_y = y_offset
-                box_width = 150
-                box_height = 100
+                # Basic dimensions
+                line_height = 15
+                header_height = 25
+                section_padding = 10
                 
-                # Draw rectangle
+                # Calculate required height
+                attr_height = len(attributes) * line_height + (section_padding if attributes else 0)
+                op_height = len(operations) * line_height + (section_padding if operations else 0)
+                box_height = header_height + attr_height + op_height + 30
+                
+                # Store box info for connections
+                class_boxes[class_data.get('id', f'class_{i}')] = {
+                    'x': box_x, 'y': box_y, 'width': box_width, 'height': box_height,
+                    'center_x': box_x + box_width // 2, 'center_y': box_y + box_height // 2,
+                    'name': class_name
+                }
+                
+                # Draw main box
+                outline_color = styling_options.get('outline_color', 'black') if styling_options else 'black'
+                outline_width = styling_options.get('outline_width', 2) if styling_options else 2
+                
                 draw.rectangle([box_x, box_y, box_x + box_width, box_y + box_height], 
-                             outline='black', width=2)
+                             outline=outline_color, width=outline_width)
                 
-                # Draw class name
-                try:
-                    draw.text((box_x + 10, box_y + 10), class_name, fill='black')
-                except:
-                    pass  # Font might not be available
+                # Draw class name (header)
+                draw.text((box_x + 10, box_y + 5), class_name, fill='black', font=font)
+                
+                # Draw separator line after class name
+                current_y = box_y + header_height
+                draw.line([box_x, current_y, box_x + box_width, current_y], fill='black', width=1)
+                
+                # Draw attributes
+                if attributes:
+                    current_y += 5
+                    for attr in attributes:
+                        visibility = self.get_visibility_symbol(attr.get('visibility', 'private'))
+                        attr_name = attr.get('name', '')
+                        attr_type = attr.get('type', '')
+                        attr_text = f"{visibility}{attr_name}: {attr_type}"
+                        draw.text((box_x + 10, current_y), attr_text, fill='black', font=small_font)
+                        current_y += line_height
+                    
+                    # Draw separator line after attributes
+                    draw.line([box_x, current_y + 5, box_x + box_width, current_y + 5], fill='black', width=1)
+                    current_y += 10
+                
+                # Draw operations
+                if operations:
+                    for op in operations:
+                        visibility = self.get_visibility_symbol(op.get('visibility', 'public'))
+                        op_name = op.get('name', '')
+                        return_type = op.get('returnType', 'void')
+                        
+                        # Format parameters
+                        params = op.get('parameters', [])
+                        param_str = ', '.join([f"{p.get('name', '')}: {p.get('type', '')}" for p in params])
+                        
+                        op_text = f"{visibility}{op_name}({param_str}): {return_type}"
+                        draw.text((box_x + 10, current_y), op_text, fill='black', font=small_font)
+                        current_y += line_height
+            
+            # Draw connections
+            self._draw_connections_simple(draw, classes_data, class_boxes)
             
             return diagram_image
+            
         except Exception as e:
             print(f"Error generating diagram: {e}")
-            # Return a minimal valid image
+            # Return a minimal valid image with error info
             try:
                 minimal_image = Image.new('RGB', (400, 300), 'white')
                 draw = ImageDraw.Draw(minimal_image)
                 draw.text((10, 10), "UML Diagram", fill='black')
+                draw.text((10, 30), f"Error: {str(e)}", fill='red')
                 return minimal_image
             except:
                 return None
+    
+    def _draw_connections_simple(self, draw, classes_data, class_boxes):
+        """Draw connections between classes"""
+        # Create a mapping of class names to box info
+        name_to_box = {box_info['name']: box_info for box_info in class_boxes.values()}
+        
+        for class_data in classes_data:
+            source_box = class_boxes.get(class_data.get('id'))
+            if not source_box:
+                continue
+                
+            for connection in class_data.get('connections', []):
+                target_name = connection.get('targetClass')
+                if not target_name:
+                    continue
+                    
+                target_box = name_to_box.get(target_name)
+                if not target_box:
+                    continue
+                
+                # Draw connection line
+                relationship = connection.get('relationship', 'association')
+                
+                # Calculate connection points (center to center for simplicity)
+                start_x, start_y = source_box['center_x'], source_box['center_y']
+                end_x, end_y = target_box['center_x'], target_box['center_y']
+                
+                # Draw the connection line
+                draw.line([start_x, start_y, end_x, end_y], fill='blue', width=2)
+                
+                # Draw relationship indicator
+                mid_x = (start_x + end_x) // 2
+                mid_y = (start_y + end_y) // 2
+                
+                # Draw relationship symbol/text
+                rel_text = self._get_relationship_symbol(relationship)
+                if rel_text:
+                    draw.text((mid_x - 10, mid_y - 10), rel_text, fill='blue')
+    
+    def _get_relationship_symbol(self, relationship):
+        """Get symbol for relationship type"""
+        symbols = {
+            'inheritance': '▲',
+            'association': '→',
+            'aggregation': '◇',
+            'composition': '◆',
+            'dependency': '- ->'
+        }
+        return symbols.get(relationship, '→')
 
 # Initialize the UML service
 uml_service = UMLDiagramService()
@@ -210,6 +332,16 @@ def generate_diagram():
         data = request.get_json()
         classes_data = data.get('classes', [])
         styling_options = data.get('styling', {})
+        
+        # Debug: Log the received data
+        print(f"Received {len(classes_data)} classes")
+        for i, cls in enumerate(classes_data):
+            print(f"Class {i}: {cls.get('name', 'Unnamed')}")
+            print(f"  - Attributes: {len(cls.get('attributes', []))}")
+            print(f"  - Operations: {len(cls.get('operations', []))}")
+            print(f"  - Connections: {len(cls.get('connections', []))}")
+            for conn in cls.get('connections', []):
+                print(f"    -> {conn.get('targetClass', 'Unknown')} ({conn.get('relationship', 'unknown')})")
         
         if not classes_data:
             return jsonify({'success': False, 'error': 'No classes provided'}), 400
