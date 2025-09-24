@@ -107,7 +107,7 @@ class ConnectionManager:
     
     def _get_best_connection_point(self, class_pos: Tuple[int, int, int, int], 
                                   target_x: int, target_y: int) -> ConnectionPoint:
-        """Get the best connection point on a class border"""
+        """Get the best connection point on a class border with offset to prevent arrow overlap"""
         x, y, w, h = class_pos
         center_x = x + w // 2
         center_y = y + h // 2
@@ -116,19 +116,22 @@ class ConnectionManager:
         dx = target_x - center_x
         dy = target_y - center_y
         
+        # Offset to prevent arrow heads from overlapping with box content
+        arrow_offset = 15  # Maximum size of any arrow/symbol in drawConnection
+        
         # Determine which side to connect to
         if abs(dx) > abs(dy):
             # Connect to left or right side
             if dx > 0:  # Target is to the right
-                return ConnectionPoint(x + w, center_y, 'right')
+                return ConnectionPoint(x + w + arrow_offset, center_y, 'right')
             else:  # Target is to the left
-                return ConnectionPoint(x, center_y, 'left')
+                return ConnectionPoint(x - arrow_offset, center_y, 'left')
         else:
             # Connect to top or bottom side
             if dy > 0:  # Target is below
-                return ConnectionPoint(center_x, y + h, 'bottom')
+                return ConnectionPoint(center_x, y + h + arrow_offset, 'bottom')
             else:  # Target is above
-                return ConnectionPoint(center_x, y, 'top')
+                return ConnectionPoint(center_x, y - arrow_offset, 'top')
 
 # Helper functions for creating common UML relationships
 def create_inheritance_connection(child_class: str, parent_class: str, 

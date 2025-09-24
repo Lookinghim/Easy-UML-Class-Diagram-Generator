@@ -321,8 +321,8 @@ def drawConnection(image, start_x, start_y, end_x, end_y, connection_type='assoc
     
     Args:
         image: PIL Image to draw on
-        start_x, start_y: Starting point coordinates
-        end_x, end_y: Ending point coordinates  
+        start_x, start_y: Starting point coordinates (offset from box edge)
+        end_x, end_y: Ending point coordinates (offset from box edge)
         connection_type: Type of UML relationship
         line_color: Color of the line and arrow
         line_width: Width of the line
@@ -336,32 +336,56 @@ def drawConnection(image, start_x, start_y, end_x, end_y, connection_type='assoc
         - 'realization': Dashed line with empty triangle
         - 'dependency': Dashed line with arrow
     """
+    import math
     draw = ImageDraw.Draw(image)
     
-    # Draw the main line
+    # Calculate direction from start to end
+    dx = end_x - start_x
+    dy = end_y - start_y
+    length = math.sqrt(dx*dx + dy*dy)
+    
+    if length == 0:
+        return
+    
+    # Normalize direction
+    dx_norm = dx / length
+    dy_norm = dy / length
+    
+    # Calculate actual line start and end points (move inward from offset points)
+    arrow_offset = 15  # Same as the offset used in ConnectionManager
+    
+    # Move start point inward toward the end
+    actual_start_x = start_x + dx_norm * arrow_offset
+    actual_start_y = start_y + dy_norm * arrow_offset
+    
+    # Move end point inward toward the start
+    actual_end_x = end_x - dx_norm * arrow_offset
+    actual_end_y = end_y - dy_norm * arrow_offset
+    
+    # Draw the main line between actual connection points (not through boxes)
     if connection_type in ['realization', 'dependency']:
         # Draw dashed line
-        draw_dashed_line(draw, start_x, start_y, end_x, end_y, line_color, line_width)
+        draw_dashed_line(draw, actual_start_x, actual_start_y, actual_end_x, actual_end_y, line_color, line_width)
     else:
         # Draw solid line
-        draw.line([(start_x, start_y), (end_x, end_y)], fill=line_color, width=line_width)
+        draw.line([(actual_start_x, actual_start_y), (actual_end_x, actual_end_y)], fill=line_color, width=line_width)
     
-    # Draw appropriate arrow/symbol at the end
+    # Draw appropriate arrow/symbol at the actual end point (box edge)
     if connection_type == 'association':
-        draw_arrow_head(draw, start_x, start_y, end_x, end_y, line_color, line_width)
+        draw_arrow_head(draw, actual_start_x, actual_start_y, actual_end_x, actual_end_y, line_color, line_width)
     elif connection_type == 'aggregation':
-        draw_diamond(draw, end_x, end_y, start_x, start_y, line_color, line_width, filled=False)
+        draw_diamond(draw, actual_end_x, actual_end_y, actual_start_x, actual_start_y, line_color, line_width, filled=False)
     elif connection_type == 'composition':
-        draw_diamond(draw, end_x, end_y, start_x, start_y, line_color, line_width, filled=True)
+        draw_diamond(draw, actual_end_x, actual_end_y, actual_start_x, actual_start_y, line_color, line_width, filled=True)
     elif connection_type == 'inheritance':
-        draw_triangle(draw, start_x, start_y, end_x, end_y, line_color, line_width, filled=False)
+        draw_triangle(draw, actual_start_x, actual_start_y, actual_end_x, actual_end_y, line_color, line_width, filled=False)
     elif connection_type == 'inheritance_line':
         # Plain line only - no arrow (for proper generalization)
         pass  # Line already drawn above, no additional symbol needed
     elif connection_type == 'realization':
-        draw_triangle(draw, start_x, start_y, end_x, end_y, line_color, line_width, filled=False)
+        draw_triangle(draw, actual_start_x, actual_start_y, actual_end_x, actual_end_y, line_color, line_width, filled=False)
     elif connection_type == 'dependency':
-        draw_arrow_head(draw, start_x, start_y, end_x, end_y, line_color, line_width)
+        draw_arrow_head(draw, actual_start_x, actual_start_y, actual_end_x, actual_end_y, line_color, line_width)
 
 def draw_dashed_line(draw, x1, y1, x2, y2, color, width):
     """Draw a dashed line between two points"""

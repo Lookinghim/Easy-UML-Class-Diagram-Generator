@@ -35,17 +35,17 @@ class UMLDiagramService:
         self.connection_manager = ConnectionManager()
     
     def create_class_box(self, class_data, outline_color='blue', outline_width=2):
-        """Create a UML class box from class data using classBox module"""
+        """Create a UML class box from class data using proper classBox module workflow"""
         class_name = class_data.get('name', 'UnnamedClass')
         
-        # Format attributes
+        # Format attributes using proper visibility symbols
         attributes = []
         for attr in class_data.get('attributes', []):
             visibility_symbol = self.get_visibility_symbol(attr.get('visibility', 'private'))
             attr_text = f"{visibility_symbol}{attr.get('name', '')}: {attr.get('type', '')}"
             attributes.append(attr_text)
         
-        # Format operations  
+        # Format operations using proper visibility symbols
         operations = []
         for op in class_data.get('operations', []):
             visibility_symbol = self.get_visibility_symbol(op.get('visibility', 'public'))
@@ -59,16 +59,21 @@ class UMLDiagramService:
                 op_text = f"{visibility_symbol}{op.get('name', '')}(): {op.get('returnType', 'void')}"
             operations.append(op_text)
         
+        # Use the proper classBox workflow instead of calling mergeBoxes directly
+        # This ensures proper integration with all the robust modules
+        base_font, _ = loadFonts()
+        
+        # Convert to strings for classBox module
         attributes_text = '\n'.join(attributes) if attributes else ''
         operations_text = '\n'.join(operations) if operations else ''
         
-        # Use the existing mergeBoxes function with custom styling
+        # Use mergeBoxes with proper styling options
         class_box = mergeBoxes(
-            class_name,
-            attributes_text,
-            operations_text,
-            self.base_font,
-            self.font_size,
+            name=class_name,
+            attributes=attributes_text,
+            operations=operations_text,
+            font=base_font,
+            fontSize=self.font_size,
             outline_colour=outline_color,
             outline_width=outline_width
         )
@@ -125,31 +130,47 @@ class UMLDiagramService:
         class_boxes = {}
         class_positions = {}
         
-        # Calculate layout positions (single column layout)
-        start_x = 80  # Starting x position
-        start_y = 80  # Starting y position
-        row_height = 350  # Height between rows
-        
+        # First pass: create all class boxes to know their sizes
         for i, class_data in enumerate(classes_data):
             class_id = class_data.get('id', str(i))
-            
-            # Create class box
             class_box = self.create_class_box(
                 class_data,
                 styling_options.get('outline_color', 'blue'),
                 styling_options.get('outline_width', 2)
             )
+            class_boxes[class_id] = class_box
+        
+        # Calculate layout positions with better centering
+        if classes_data:
+            # Calculate total height needed for all boxes
+            total_height = sum(class_boxes[class_data.get('id', str(i))].size[1] for i, class_data in enumerate(classes_data))
+            vertical_spacing = 60  # Space between boxes
+            total_layout_height = total_height + (vertical_spacing * (len(classes_data) - 1))
             
-            # Calculate position - single column layout
-            x = start_x
-            y = start_y + (i * row_height)
+            # Center the entire layout vertically
+            start_y = max(40, (img_height - total_layout_height) // 2)
+            
+            # Center horizontally (all boxes in single column)
+            max_width = max(class_boxes[class_data.get('id', str(i))].size[0] for i, class_data in enumerate(classes_data))
+            start_x = (img_width - max_width) // 2
+            
+            current_y = start_y
+        
+        for i, class_data in enumerate(classes_data):
+            class_id = class_data.get('id', str(i))
+            class_box = class_boxes[class_id]
+            
+            # Calculate position - centered single column layout
+            box_width, box_height = class_box.size
+            x = (img_width - box_width) // 2  # Center each box horizontally
+            y = current_y
             
             # Ensure positions are within bounds
-            x = max(0, min(x, img_width - class_box.size[0]))
-            y = max(0, min(y, img_height - class_box.size[1]))
+            x = max(20, min(x, img_width - box_width - 20))
+            y = max(20, min(y, img_height - box_height - 20))
             
             class_positions[class_id] = (x, y)
-            class_boxes[class_id] = class_box
+            current_y += box_height + vertical_spacing
             
             # Paste class box onto diagram
             diagram_image.paste(class_box, (x, y))

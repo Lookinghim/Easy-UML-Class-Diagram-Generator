@@ -95,20 +95,11 @@ class UMLDiagramService:
             class_boxes = {}
             class_positions = {}
             
-            # Calculate single column layout for classes
-            col_width = 300
-            row_height = 350
-            start_x = 80
-            start_y = 80
-                
+            # First pass: create all class boxes to know their sizes
+            temp_class_boxes = {}
             for i, class_data in enumerate(classes_data):
-                # Single column layout - all classes in same column
-                pos_x = start_x
-                pos_y = start_y + (i * row_height)
-                
-                # Extract class information
-                class_name = class_data.get('name', f'Class{i+1}')
                 class_id = class_data.get('id', f'class_{i}')
+                class_name = class_data.get('name', f'Class{i+1}')
                 attributes = class_data.get('attributes', [])
                 operations = class_data.get('operations', [])
                 
@@ -153,10 +144,42 @@ class UMLDiagramService:
                     outline_colour=outline_color,
                     outline_width=outline_width
                 )
+                temp_class_boxes[class_id] = class_box
+            
+            # Calculate layout positions with better centering
+            if classes_data:
+                # Calculate total height needed for all boxes
+                total_height = sum(temp_class_boxes[class_data.get('id', f'class_{i}')].size[1] for i, class_data in enumerate(classes_data))
+                vertical_spacing = 60  # Space between boxes
+                total_layout_height = total_height + (vertical_spacing * (len(classes_data) - 1))
+                
+                # Center the entire layout vertically
+                start_y = max(40, (img_height - total_layout_height) // 2)
+                
+                # Center horizontally (all boxes in single column)
+                max_width = max(temp_class_boxes[class_data.get('id', f'class_{i}')].size[0] for i, class_data in enumerate(classes_data))
+                start_x = (img_width - max_width) // 2
+                
+                current_y = start_y
+                
+            for i, class_data in enumerate(classes_data):
+                class_id = class_data.get('id', f'class_{i}')
+                class_name = class_data.get('name', f'Class{i+1}')
+                class_box = temp_class_boxes[class_id]
+                
+                # Calculate position - centered single column layout
+                box_width, box_height = class_box.size
+                pos_x = (img_width - box_width) // 2  # Center each box horizontally
+                pos_y = current_y
+                
+                # Ensure positions are within bounds
+                pos_x = max(20, min(pos_x, img_width - box_width - 20))
+                pos_y = max(20, min(pos_y, img_height - box_height - 20))
                 
                 # Store class box and position
                 class_boxes[class_id] = class_box
                 class_positions[class_id] = (pos_x, pos_y)
+                current_y += box_height + vertical_spacing
                 
                 # Register class position with connection manager
                 connection_manager.add_class_position(
