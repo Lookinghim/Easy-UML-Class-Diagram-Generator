@@ -609,9 +609,24 @@
                     styling: stylingOptions
                 });
 
-                showMessage('Diagram generated successfully!', 'success');
-                // Open download link
-                window.open(result.download_url, '_blank');
+                if (result.download_url) {
+                    showMessage('Diagram generated successfully!', 'success');
+                    window.open(result.download_url, '_blank');
+                } else if (result.plantuml_code) {
+                    showMessage('PlantUML code generated! (Vercel deployment)', 'success');
+                    // Create and download PlantUML file
+                    const blob = new Blob([result.plantuml_code], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'generated-uml-diagram.puml';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                } else {
+                    showMessage('Diagram generated successfully!', 'success');
+                }
                 
             } catch (error) {
                 showMessage('Error generating diagram: ' + error.message, 'error');

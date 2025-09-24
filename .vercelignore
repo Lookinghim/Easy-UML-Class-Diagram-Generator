@@ -1,0 +1,12 @@
+.venv/
+node_modules/
+.git/
+__pycache__/
+*.pyc
+.env
+test/
+test_*.py
+collision_*.py
+*.png
+*.puml
+WEB_APP_COMPLETE.md
