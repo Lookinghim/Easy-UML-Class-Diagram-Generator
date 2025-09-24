@@ -390,22 +390,38 @@
         function updateConnectionOptions() {
             const selects = document.querySelectorAll('.target-class-select');
             selects.forEach(select => {
-                const currentValue = select.value;
+                // Get the current value from either the select value or the data attribute
+                const currentValue = select.value || select.dataset.currentValue || '';
                 const currentClassId = select.dataset.classId;
+                const connectionId = select.dataset.connectionId;
                 
+                // Clear and rebuild options
                 select.innerHTML = '<option value="">Select target class</option>';
                 
+                // Add options for all other classes
                 classes.forEach(cls => {
                     if (cls.id !== currentClassId) {
                         const option = document.createElement('option');
                         option.value = cls.name;
                         option.textContent = cls.name;
+                        
+                        // Preserve the selection
                         if (option.value === currentValue) {
                             option.selected = true;
+                            select.value = currentValue; // Ensure the select shows the right value
                         }
+                        
                         select.appendChild(option);
                     }
                 });
+                
+                // Update the data attribute to reflect current state
+                select.dataset.currentValue = select.value;
+                
+                // Most importantly: Update the actual connection data if we have a selection
+                if (select.value && currentClassId && connectionId) {
+                    updateConnection(currentClassId, connectionId, 'targetClass', select.value);
+                }
             });
         }
 
@@ -571,7 +587,9 @@
                 <div class="flex items-center gap-2">
                     <select onchange="updateConnection('${classId}', '${conn.id}', 'targetClass', this.value)"
                             class="target-class-select flex-1 border border-gray-300 rounded px-3 py-1"
-                            data-class-id="${classId}">
+                            data-class-id="${classId}"
+                            data-connection-id="${conn.id}"
+                            data-current-value="${conn.targetClass || ''}">
                         <option value="">Select target class</option>
                     </select>
                     <select onchange="updateConnection('${classId}', '${conn.id}', 'relationship', this.value)"
@@ -612,8 +630,15 @@
                 } else if (result.image_data) {
                     // Vercel deployment with base64 PNG data
                     showMessage('Diagram generated successfully!', 'success');
+                    
+                    // Handle both data URL format and plain base64
+                    let base64Data = result.image_data;
+                    if (base64Data.startsWith('data:image/png;base64,')) {
+                        base64Data = base64Data.split(',')[1];
+                    }
+                    
                     // Convert base64 to blob and download
-                    const byteCharacters = atob(result.image_data);
+                    const byteCharacters = atob(base64Data);
                     const byteNumbers = new Array(byteCharacters.length);
                     for (let i = 0; i < byteCharacters.length; i++) {
                         byteNumbers[i] = byteCharacters.charCodeAt(i);
