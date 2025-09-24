@@ -17,8 +17,9 @@ import io
 import base64
 
 # Import our UML generation modules
-from diagramDraw import mergeBoxes, loadFonts, note, clear_notes
+from diagramDraw import mergeBoxes, loadFonts, note, clear_notes, drawConnection
 from connection import ConnectionManager, ConnectionType, UMLConnection
+from classBox import createSingleUMLClass
 
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
 CORS(app)  # Enable CORS for API calls
@@ -34,7 +35,7 @@ class UMLDiagramService:
         self.connection_manager = ConnectionManager()
     
     def create_class_box(self, class_data, outline_color='blue', outline_width=2):
-        """Create a UML class box from class data"""
+        """Create a UML class box from class data using classBox module"""
         class_name = class_data.get('name', 'UnnamedClass')
         
         # Format attributes
@@ -44,17 +45,24 @@ class UMLDiagramService:
             attr_text = f"{visibility_symbol}{attr.get('name', '')}: {attr.get('type', '')}"
             attributes.append(attr_text)
         
-        # Format operations
+        # Format operations  
         operations = []
         for op in class_data.get('operations', []):
             visibility_symbol = self.get_visibility_symbol(op.get('visibility', 'public'))
-            op_text = f"{visibility_symbol}{op.get('name', '')}"
+            
+            # Format parameters if they exist
+            params = op.get('parameters', [])
+            if params:
+                param_str = ', '.join([f"{p.get('name', '')}: {p.get('type', '')}" for p in params])
+                op_text = f"{visibility_symbol}{op.get('name', '')}({param_str}): {op.get('returnType', 'void')}"
+            else:
+                op_text = f"{visibility_symbol}{op.get('name', '')}(): {op.get('returnType', 'void')}"
             operations.append(op_text)
         
         attributes_text = '\n'.join(attributes) if attributes else ''
         operations_text = '\n'.join(operations) if operations else ''
         
-        # Create the class box
+        # Use the existing mergeBoxes function with custom styling
         class_box = mergeBoxes(
             class_name,
             attributes_text,
@@ -117,10 +125,10 @@ class UMLDiagramService:
         class_boxes = {}
         class_positions = {}
         
-        # Calculate layout positions (simple grid layout)
-        classes_per_row = max(1, int(len(classes_data) ** 0.5))
-        box_spacing_x = img_width // (classes_per_row + 1)
-        box_spacing_y = img_height // (len(classes_data) // classes_per_row + 2)
+        # Calculate layout positions (single column layout)
+        start_x = 80  # Starting x position
+        start_y = 80  # Starting y position
+        row_height = 350  # Height between rows
         
         for i, class_data in enumerate(classes_data):
             class_id = class_data.get('id', str(i))
@@ -132,11 +140,9 @@ class UMLDiagramService:
                 styling_options.get('outline_width', 2)
             )
             
-            # Calculate position
-            row = i // classes_per_row
-            col = i % classes_per_row
-            x = box_spacing_x * (col + 1) - class_box.size[0] // 2
-            y = box_spacing_y * (row + 1) - class_box.size[1] // 2
+            # Calculate position - single column layout
+            x = start_x
+            y = start_y + (i * row_height)
             
             # Ensure positions are within bounds
             x = max(0, min(x, img_width - class_box.size[0]))
@@ -148,13 +154,14 @@ class UMLDiagramService:
             # Paste class box onto diagram
             diagram_image.paste(class_box, (x, y))
             
-            # Add notes if present
+            # Add notes if present and have actual content
             for note_data in class_data.get('notes', []):
-                if note_data.get('text', '').strip():
+                note_text = note_data.get('text', '').strip()
+                if note_text and len(note_text) > 0:
                     note_color = self.get_note_color(note_data.get('type', 'Standard'))
                     note(
                         diagram_image,
-                        note_data['text'],
+                        note_text,
                         (x, y),
                         class_box.size,
                         self.base_font,
@@ -179,86 +186,134 @@ class UMLDiagramService:
         return colors.get(note_type, 'yellow')
     
     def _draw_connections(self, image, classes_data, class_positions, class_boxes):
-        """Draw connections between classes using basic drawing"""
-        from PIL import ImageDraw
-        
-        draw = ImageDraw.Draw(image)
+        """Draw connections between classes using proper edge connection points and generalization detection"""
+        from diagramDraw import draw_proper_generalization
         
         # Create a mapping of class names to IDs for connection lookup
         class_name_to_id = {cls['name']: cls['id'] for cls in classes_data}
         
+        # Create connection manager and register all class positions
+        connection_manager = ConnectionManager()
+        class_name_to_info = {}
+        
         for class_data in classes_data:
-            source_id = class_data['id']
-            source_pos = class_positions.get(source_id)
-            source_box = class_boxes.get(source_id)
-            
-            if not source_pos or not source_box:
+            class_id = class_data['id']
+            class_name = class_data['name']
+            if class_id in class_positions and class_id in class_boxes:
+                pos = class_positions[class_id]
+                size = class_boxes[class_id].size
+                connection_manager.add_class_position(class_name, pos[0], pos[1], size[0], size[1])
+                class_name_to_info[class_name] = {
+                    'position': pos,
+                    'size': size,
+                    'id': class_id
+                }
+        
+        # First, collect all connections and group inheritance connections by target
+        all_connections = []
+        inheritance_groups = {}  # target_name -> [source_names]
+        
+        for class_data in classes_data:
+            source_name = class_data['name']
+            if source_name not in class_name_to_info:
                 continue
-            
+                
             for connection in class_data.get('connections', []):
                 target_name = connection.get('targetClass')
-                target_id = class_name_to_id.get(target_name)
-                
-                if not target_id:
-                    continue
-                
-                target_pos = class_positions.get(target_id)
-                target_box = class_boxes.get(target_id)
-                
-                if not target_pos or not target_box:
-                    continue
-                
-                # Calculate connection points (center to center for simplicity)
-                source_center_x = source_pos[0] + source_box.size[0] // 2
-                source_center_y = source_pos[1] + source_box.size[1] // 2
-                target_center_x = target_pos[0] + target_box.size[0] // 2
-                target_center_y = target_pos[1] + target_box.size[1] // 2
-                
-                # Draw basic line
                 relationship = connection.get('relationship', 'association')
-                line_color = 'black'
-                line_width = 2
+                
+                if not target_name or target_name not in class_name_to_info:
+                    continue
                 
                 if relationship == 'inheritance':
-                    line_color = 'blue'
-                elif relationship == 'composition':
-                    line_color = 'red'
-                elif relationship == 'aggregation':
-                    line_color = 'green'
-                elif relationship == 'dependency':
-                    line_color = 'gray'
+                    # Group inheritance connections
+                    if target_name not in inheritance_groups:
+                        inheritance_groups[target_name] = []
+                    inheritance_groups[target_name].append(source_name)
+                else:
+                    # Regular connection
+                    all_connections.append((source_name, target_name, relationship))
+        
+        # Draw generalization connections (grouped inheritance)
+        processed_inheritance = set()
+        
+        for target_name, source_names in inheritance_groups.items():
+            if len(source_names) > 1:
+                # Multiple inheritance - use proper generalization
+                print(f"🔗 Drawing generalization: {source_names} -> {target_name}")
                 
-                # Draw connection line
-                draw.line([
-                    (source_center_x, source_center_y),
-                    (target_center_x, target_center_y)
-                ], fill=line_color, width=line_width)
+                target_info = class_name_to_info[target_name]
+                target_pos = target_info['position']
+                target_size = target_info['size']
                 
-                # Add arrowhead for directed relationships
-                if relationship in ['inheritance', 'dependency']:
-                    self._draw_arrowhead(draw, source_center_x, source_center_y, 
-                                       target_center_x, target_center_y, line_color)
+                # Calculate parent connection point (top edge center)
+                parent_x = target_pos[0] + target_size[0] // 2
+                parent_y = target_pos[1]  # Top edge
+                parent_pos = (parent_x, parent_y)
+                
+                # Calculate children connection points (bottom edge centers)
+                children_positions = []
+                for source_name in source_names:
+                    source_info = class_name_to_info[source_name]
+                    source_pos = source_info['position']
+                    source_size = source_info['size']
+                    child_x = source_pos[0] + source_size[0] // 2
+                    child_y = source_pos[1] + source_size[1]  # Bottom edge
+                    children_positions.append((child_x, child_y))
+                
+                # Draw proper generalization
+                draw_proper_generalization(
+                    image, parent_pos, children_positions, 
+                    line_color='black', line_width=2
+                )
+                
+                processed_inheritance.update(source_names)
+            else:
+                # Single inheritance - add to regular connections
+                all_connections.append((source_names[0], target_name, 'inheritance'))
+        
+        # Draw regular connections (non-grouped)
+        for source_name, target_name, relationship in all_connections:
+            if relationship == 'inheritance' and source_name in processed_inheritance:
+                continue  # Already drawn as part of generalization
+            
+            source_info = class_name_to_info[source_name]
+            target_info = class_name_to_info[target_name]
+            
+            source_pos = source_info['position']
+            source_size = source_info['size']
+            target_pos = target_info['position']
+            target_size = target_info['size']
+            
+            # Use ConnectionManager to calculate proper edge connection points
+            source_class_pos = (source_pos[0], source_pos[1], source_size[0], source_size[1])
+            target_class_pos = (target_pos[0], target_pos[1], target_size[0], target_size[1])
+            
+            # Calculate centers for direction determination
+            target_center_x = target_pos[0] + target_size[0] // 2
+            target_center_y = target_pos[1] + target_size[1] // 2
+            source_center_x = source_pos[0] + source_size[0] // 2
+            source_center_y = source_pos[1] + source_size[1] // 2
+            
+            # Get proper edge connection points using ConnectionManager logic
+            start_point = connection_manager._get_best_connection_point(source_class_pos, target_center_x, target_center_y)
+            end_point = connection_manager._get_best_connection_point(target_class_pos, source_center_x, source_center_y)
+            
+            # Use uniform black color for all connections
+            line_color = 'black'
+            
+            # Use the proper drawConnection function with edge connection points
+            drawConnection(
+                image=image,
+                start_x=start_point.x,
+                start_y=start_point.y,
+                end_x=end_point.x,
+                end_y=end_point.y,
+                connection_type=relationship,
+                line_color=line_color,
+                line_width=2
+            )
     
-    def _draw_arrowhead(self, draw, start_x, start_y, end_x, end_y, color):
-        """Draw a simple arrowhead at the end of a line"""
-        import math
-        
-        # Calculate angle of the line
-        angle = math.atan2(end_y - start_y, end_x - start_x)
-        
-        # Arrowhead size
-        arrow_length = 10
-        arrow_angle = math.pi / 6  # 30 degrees
-        
-        # Calculate arrowhead points
-        x1 = end_x - arrow_length * math.cos(angle - arrow_angle)
-        y1 = end_y - arrow_length * math.sin(angle - arrow_angle)
-        x2 = end_x - arrow_length * math.cos(angle + arrow_angle)
-        y2 = end_y - arrow_length * math.sin(angle + arrow_angle)
-        
-        # Draw arrowhead
-        draw.polygon([(end_x, end_y), (x1, y1), (x2, y2)], fill=color)
-
 # Initialize the UML service
 uml_service = UMLDiagramService()
 
